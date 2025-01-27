@@ -1,0 +1,47 @@
+# 환경 변수 파일
+**/.env
+**/.env.local
+**/.env.*.local
+
+# 프론트엔드
+/frontend/node_modules
+/frontend/dist
+/frontend/build
+/frontend/.vite
+/frontend/*.log
+/frontend/npm-debug.log*
+/frontend/yarn-debug.log*
+/frontend/yarn-error.log*
+
+# 백엔드
+/backend/vendor
+/backend/tmp
+/backend/*.exe
+/backend/*.exe~
+/backend/*.dll
+/backend/*.so
+/backend/*.dylib
+/backend/*.test
+/backend/*.out
+
+# 시스템 파일
+.DS_Store
+Thumbs.db
+
+# IDE 설정
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 빌드 결과물
+/frontend/dist/
+/frontend/build/
+
+# Go 바이너리 및 의존성
+/backend/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib 
