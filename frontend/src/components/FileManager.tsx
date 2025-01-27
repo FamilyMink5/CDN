@@ -36,17 +36,24 @@ const API_CONFIG = {
   }
 };
 
-// AES 키 (Base64 디코딩)
-const decodeBase64 = (str: string): string => {
+// AES 키 (Base64 디코딩 후 SHA-256 해시)
+const getAESKey = async (base64Key: string): Promise<ArrayBuffer> => {
   try {
-    return atob(str);
+    // Base64 디코딩
+    const decodedKey = atob(base64Key);
+    // 바이너리 데이터로 변환
+    const keyBytes = new Uint8Array(decodedKey.length);
+    for (let i = 0; i < decodedKey.length; i++) {
+      keyBytes[i] = decodedKey.charCodeAt(i);
+    }
+    // SHA-256 해시를 사용하여 32바이트 키 생성
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', keyBytes);
+    return hashBuffer;
   } catch (e) {
-    console.error('Failed to decode AES key:', e);
-    return '';
+    console.error('Failed to process AES key:', e);
+    throw e;
   }
 };
-
-const AES_KEY = decodeBase64(import.meta.env.VITE_AES_KEY);
 
 const FileManager = () => {
   const theme = useTheme();
@@ -111,61 +118,83 @@ const FileManager = () => {
     return 'other';
   };
 
-  // AES 복호화 함수
-  const decryptData = async (encryptedBase64: string): Promise<ArrayBuffer> => {
-    // Base64 디코딩
-    const encryptedData = atob(encryptedBase64);
-    const encryptedBytes = new Uint8Array(encryptedData.length);
-    for (let i = 0; i < encryptedData.length; i++) {
-      encryptedBytes[i] = encryptedData.charCodeAt(i);
-    }
-
-    // GCM 모드의 nonce 크기는 12바이트
-    const nonceSize = 12;
-    const nonce = encryptedBytes.slice(0, nonceSize);
-    const ciphertext = encryptedBytes.slice(nonceSize);
-
-    // Web Crypto API를 사용하여 복호화
-    const key = await window.crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(AES_KEY),
-      { name: 'AES-GCM' },
-      false,
-      ['decrypt']
-    );
-
-    return window.crypto.subtle.decrypt(
-      {
-        name: 'AES-GCM',
-        iv: nonce
-      },
-      key,
-      ciphertext
-    );
-  };
-
   const handleDownload = async (fileName: string) => {
     try {
+      console.log('다운로드 시작:', fileName);
+      
       const response = await axios.get(`${API_CONFIG.baseURL}/download/${fileName}`, {
         headers: API_CONFIG.headers,
         responseType: 'text'
       });
       
-      // 암호화된 데이터 복호화
-      const decryptedData = await decryptData(response.data);
+      console.log('서버 응답 받음, 데이터 길이:', response.data.length);
+      console.log('응답 데이터 샘플:', response.data.slice(0, 100));
       
-      // 복호화된 데이터로 파일 생성
-      const blob = new Blob([decryptedData]);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      try {
+        // Base64 디코딩
+        console.log('Base64 디코딩 시작');
+        const encryptedData = atob(response.data);
+        console.log('Base64 디코딩 완료, 길이:', encryptedData.length);
+        
+        const encryptedBytes = new Uint8Array(encryptedData.length);
+        for (let i = 0; i < encryptedData.length; i++) {
+          encryptedBytes[i] = encryptedData.charCodeAt(i);
+        }
+        console.log('Uint8Array 변환 완료, 길이:', encryptedBytes.length);
+
+        // GCM 모드의 nonce 크기는 12바이트
+        const nonceSize = 12;
+        const nonce = encryptedBytes.slice(0, nonceSize);
+        const ciphertext = encryptedBytes.slice(nonceSize);
+
+        console.log('Nonce 크기:', nonce.length);
+        console.log('암호화된 데이터 크기:', ciphertext.length);
+
+        // AES 키 생성
+        const keyBuffer = await getAESKey(import.meta.env.VITE_AES_KEY);
+        console.log('AES 키 생성 완료, 길이:', keyBuffer.byteLength);
+
+        // Web Crypto API를 사용하여 복호화
+        console.log('키 임포트 시작');
+        const key = await window.crypto.subtle.importKey(
+          'raw',
+          keyBuffer,
+          { name: 'AES-GCM' },
+          false,
+          ['decrypt']
+        );
+        console.log('키 임포트 완료');
+
+        console.log('복호화 시작');
+        const decryptedData = await window.crypto.subtle.decrypt(
+          {
+            name: 'AES-GCM',
+            iv: nonce
+          },
+          key,
+          ciphertext
+        );
+        console.log('복호화 완료, 데이터 크기:', decryptedData.byteLength);
+
+        // 복호화된 데이터로 파일 생성
+        console.log('파일 생성 시작');
+        const blob = new Blob([decryptedData]);
+        console.log('Blob 생성됨, 크기:', blob.size);
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', fileName);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+        console.log('다운로드 완료');
+      } catch (error) {
+        console.error('데이터 처리 중 오류:', error);
+        throw error;
+      }
     } catch (error) {
-      console.error('파일 다운로드 실패:', error);
+      console.error('전체 다운로드 프로세스 실패:', error);
     }
   };
 
@@ -274,6 +303,7 @@ const FileManager = () => {
               label="정렬 기준"
               onChange={(e) => setSortBy(e.target.value)}
               startAdornment={<SortIcon sx={{ mr: 1 }} />}
+              sx={{ minWidth: '150px' }}
             >
               <MenuItem value="name">이름순</MenuItem>
               <MenuItem value="size">크기순</MenuItem>
@@ -288,6 +318,7 @@ const FileManager = () => {
               value={fileType}
               label="파일 종류"
               onChange={(e) => setFileType(e.target.value)}
+              sx={{ minWidth: '150px' }}
             >
               <MenuItem value="all">전체</MenuItem>
               <MenuItem value="image">이미지</MenuItem>
@@ -364,9 +395,15 @@ const FileManager = () => {
       <Dialog
         open={previewOpen}
         onClose={() => setPreviewOpen(false)}
-        maxWidth="md"
+        maxWidth="sm"
         fullWidth
         fullScreen={isMobile}
+        PaperProps={{
+          sx: {
+            minHeight: '400px',
+            maxHeight: '600px'
+          }
+        }}
       >
         {selectedFile && (
           <>

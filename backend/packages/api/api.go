@@ -4,11 +4,13 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -26,7 +28,7 @@ type FileInfo struct {
 
 var (
 	API_KEY string
-	AES_KEY string
+	AES_KEY []byte
 )
 
 func init() {
@@ -41,10 +43,26 @@ func init() {
 		panic("API_KEY is not set in environment variables")
 	}
 
-	// AES 키 로드
-	AES_KEY = os.Getenv("AES_KEY")
-	if AES_KEY == "" {
+	// AES 키 로드 및 디코딩
+	aesKeyStr := os.Getenv("AES_KEY")
+	if aesKeyStr == "" {
 		panic("AES_KEY is not set in environment variables")
+	}
+
+	// Base64 디코딩
+	decodedKey, err := base64.StdEncoding.DecodeString(aesKeyStr)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to decode AES_KEY: %v", err))
+	}
+
+	// SHA-256 해시를 사용하여 32바이트 키 생성
+	hasher := sha256.New()
+	hasher.Write(decodedKey)
+	AES_KEY = hasher.Sum(nil)
+
+	// AES 키 길이 검증 (32바이트)
+	if len(AES_KEY) != 32 {
+		panic(fmt.Sprintf("Invalid AES key length: expected 32 bytes, got %d bytes", len(AES_KEY)))
 	}
 }
 
@@ -63,21 +81,21 @@ func validateAPIKey() gin.HandlerFunc {
 
 // AES 암호화 함수
 func encryptFile(data []byte) ([]byte, error) {
-	block, err := aes.NewCipher([]byte(AES_KEY))
+	block, err := aes.NewCipher(AES_KEY)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create cipher: %v", err)
 	}
 
 	// GCM 모드 사용
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create GCM: %v", err)
 	}
 
 	// Nonce 생성
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to generate nonce: %v", err)
 	}
 
 	// 암호화 및 nonce 추가
@@ -104,7 +122,14 @@ func RunFileServer() {
 	// 파일 다운로드
 	router.GET("/download/:filename", func(c *gin.Context) {
 		filename := c.Param("filename")
-		filepath := filepath.Join("D:\\CDN_DB", filename)
+		// URL 디코딩
+		decodedFilename, err := url.QueryUnescape(filename)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "잘못된 파일 이름입니다"})
+			return
+		}
+
+		filepath := filepath.Join("D:\\CDN_DB", decodedFilename)
 
 		if _, err := os.Stat(filepath); os.IsNotExist(err) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "파일을 찾을 수 없습니다"})
@@ -114,21 +139,27 @@ func RunFileServer() {
 		// 파일 읽기
 		data, err := ioutil.ReadFile(filepath)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "파일 읽기 실패"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("파일 읽기 실패: %v", err)})
 			return
 		}
+
+		fmt.Printf("원본 파일 크기: %d bytes\n", len(data))
 
 		// 파일 암호화
 		encryptedData, err := encryptFile(data)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "파일 암호화 실패"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("파일 암호화 실패: %v", err)})
 			return
 		}
+
+		fmt.Printf("암호화된 데이터 크기: %d bytes\n", len(encryptedData))
 
 		// Base64 인코딩하여 전송
 		encodedData := base64.StdEncoding.EncodeToString(encryptedData)
 
-		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+		fmt.Printf("Base64 인코딩된 데이터 크기: %d bytes\n", len(encodedData))
+
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", url.QueryEscape(decodedFilename)))
 		c.Header("Content-Type", "application/octet-stream")
 		c.String(http.StatusOK, encodedData)
 	})
