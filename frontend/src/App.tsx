@@ -1,85 +1,61 @@
 import { useState, useMemo } from 'react';
-import { Container, Typography, Box, CssBaseline, ThemeProvider, createTheme, IconButton, useMediaQuery } from '@mui/material';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import { Box, IconButton } from '@mui/material';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
-import FileManager from './components/FileManager';
-import { motion } from 'framer-motion';
+import MainFileManager from './components/MainFileManager';
 
 function App() {
-  const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)');
-  const [mode, setMode] = useState<'light' | 'dark'>(prefersDarkMode ? 'dark' : 'light');
+  const [mode, setMode] = useState<'light' | 'dark'>('dark');
 
-  const theme = useMemo(
-    () =>
-      createTheme({
-        palette: {
-          mode,
-          primary: {
-            main: mode === 'dark' ? '#90caf9' : '#1976d2',
-          },
-          background: {
-            default: mode === 'dark' ? '#121212' : '#f5f5f5',
-            paper: mode === 'dark' ? '#1e1e1e' : '#ffffff',
-          },
-        },
-        components: {
-          MuiPaper: {
-            styleOverrides: {
-              root: {
-                transition: 'background-color 0.3s ease-in-out',
-              },
-            },
-          },
-        },
-      }),
-    [mode],
-  );
+  const theme = useMemo(() => createTheme({
+    palette: {
+      mode,
+      background: {
+        default: mode === 'light' ? '#f5f5f5' : '#121212',
+        paper: mode === 'light' ? '#fff' : '#1e1e1e'
+      }
+    },
+    components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          body: {
+            transition: 'background-color 0.3s ease'
+          }
+        }
+      }
+    }
+  }), [mode]);
 
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <Container maxWidth="lg">
-        <Box sx={{ 
-          my: 4,
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-        }}>
-          <Box sx={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            mb: 4 
-          }}>
-            <motion.div
-              initial={{ x: -20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ duration: 0.5 }}
-            >
-              <Typography variant="h4" component="h1">
-                CDN 파일 관리자
-              </Typography>
-            </motion.div>
-            <motion.div
-              initial={{ x: 20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              transition={{ duration: 0.5 }}
-            >
-              <IconButton onClick={() => setMode(mode === 'dark' ? 'light' : 'dark')} color="inherit">
-                {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
-              </IconButton>
-            </motion.div>
-          </Box>
-          <motion.div
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            style={{ flex: 1 }}
-          >
-            <FileManager />
-          </motion.div>
-        </Box>
-      </Container>
+      <CssBaseline enableColorScheme />
+      <Box sx={{ 
+        minHeight: '100vh',
+        p: 3,
+        position: 'relative',
+        bgcolor: 'background.default',
+        transition: 'background-color 0.3s ease'
+      }}>
+        <IconButton
+          onClick={() => setMode(prev => prev === 'light' ? 'dark' : 'light')}
+          sx={{
+            position: 'fixed',
+            top: 16,
+            right: 16,
+            bgcolor: 'background.paper',
+            boxShadow: 2,
+            '&:hover': {
+              bgcolor: 'background.paper',
+              opacity: 0.9
+            }
+          }}
+        >
+          {mode === 'light' ? <Brightness4Icon /> : <Brightness7Icon />}
+        </IconButton>
+        <MainFileManager />
+      </Box>
     </ThemeProvider>
   );
 }
